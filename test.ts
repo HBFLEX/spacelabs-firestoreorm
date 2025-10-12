@@ -33,8 +33,16 @@ async function main(){
 
     // await userRepo.softDelete('tDOnOvTo4gJdrj6bHTaA');
 
-    const purgedCount = await userRepo.purgeDelete();
-    console.log(`Purged ${purgedCount} users`)
+    // const purgedCount = await userRepo.purgeDelete();
+    // console.log(`Purged ${purgedCount} users`)
+
+    const users = await userRepo.bulkDelete([
+        '4QrsQRQL0H9nn02YwWhc',
+        'xztjYN37VuaxKGDbcM0c',
+        'QXsMCtioXtWElIf7eoHT',
+    ]);
+
+    console.log('DELETED USERS', users);
 
     // const recentUsers = await userRepo
     //     .query()

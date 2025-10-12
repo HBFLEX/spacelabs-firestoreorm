@@ -40,6 +40,30 @@ export class FirestoreRepository<T extends { id?: ID }> {
         }
     }
 
+    async bulkCreate(dataArray: T[]): Promise<(T & { id: ID })[]> {
+        try{
+            const batch = this.db.batch();
+            const colRef = this.col();
+            const createdDocs: (T & {id: ID})[] = [];
+
+            for(const data of dataArray){
+                const validData = this.validator ? this.validator.parseCreate(data) : data;
+                const docRef = colRef.doc();
+                const docData = { ...validData, deletedAt: null } as any;
+
+                batch.set(docRef, docData);
+                createdDocs.push({ ...docData, id: docRef.id });
+            }
+
+            await batch.commit();
+            return createdDocs;
+        }catch(error: any){
+            if(error instanceof z.ZodError) throw new ValidationError(error.issues);
+            throw parseFirestoreError(error);
+        }
+    }
+
+
     async getById(id: ID, includeDeleted = false): Promise<(T & {id: ID}) | null> {
         try{
             const snapshot = await this.col().doc(id).get();
@@ -70,6 +94,49 @@ export class FirestoreRepository<T extends { id?: ID }> {
             throw parseFirestoreError(error);
         }
         
+    }
+
+    async bulkUpdate(updates: { id: ID, data: Partial<T> }[]): Promise<(T & { id: ID })[]> {
+        try{
+            const batch = this.db.batch();
+            const updatedDocs: (T & { id: ID })[] = [];
+
+            for(const { id, data } of updates){
+                const docRef = this.col().doc(id);
+                const snapshot = await docRef.get();
+
+                if(!snapshot.exists) throw new NotFoundError(`Document with ID ${id} not found`);
+                const validData = this.validator ? this.validator.parseUpdate(data) : data;
+                const merged = { ...snapshot.data(), ...validData, id };
+
+                batch.set(docRef, merged, { merge: true });
+                updatedDocs.push(merged as (T & { id: ID }));
+            }
+
+            await batch.commit();
+            return updatedDocs;
+        }catch(error: any){
+            if(error instanceof z.ZodError) throw new ValidationError(error.issues);
+            throw parseFirestoreError(error);
+        }
+    }
+
+    async bulkDelete(ids: ID[]): Promise<number> {
+        try{
+            const batch = this.db.batch();
+            let counter = 0;
+
+            for(const id of ids){
+                const docRef = this.col().doc(id);
+                batch.delete(docRef);
+                counter++;
+            }
+
+            await batch.commit();
+            return counter;
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
     }
 
     async delete(id: ID): Promise<void> {
