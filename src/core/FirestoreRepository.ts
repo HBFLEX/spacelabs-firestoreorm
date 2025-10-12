@@ -7,6 +7,7 @@ import { parseFirestoreError } from './ErrorParser';
 
 export type ID = string;
 
+
 export class FirestoreRepository<T extends { id?: ID }> {
     constructor(
         private db: Firestore, 
@@ -283,4 +284,77 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
         if(counter > 0) await batch.commit();
     }
+
+    /**
+     * Run a set of operations inside a Firestore transaction.
+     * 
+     * @param fn - A callback that receives the Firestore Transaction object
+     *             and the repository instance (bound to the same collection).
+     * @returns The result of the callback.
+    */
+
+    async runInTransaction<R>(
+        fn: (
+            tx: FirebaseFirestore.Transaction,
+            repo: FirestoreRepository<T>
+        ) => Promise<R>
+    ): Promise<R> {
+        try{
+            return await this.db.runTransaction(async (tx) => {
+                const txRepo = new FirestoreRepository<T>(this.db, this.collection, this.validator);
+                // override col() to use transaction reads/writes
+                (txRepo as any).col = () => this.db.collection(this.collection);
+                // pass transaction + repo to user callback
+                return await fn(tx, txRepo);
+            });
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
+    }
+
+    async getForUpdate(
+        tx: FirebaseFirestore.Transaction,
+        id: ID,
+        includeDeleted = false
+    ): Promise<(T & { id: ID }) | null> {
+        const docRef = this.col().doc(id);
+        const snapshot = await tx.get(docRef);
+
+        if(!snapshot.exists) return null;
+        const data = snapshot.data() as any;
+        if(!includeDeleted && data?.deletedAt) return null;
+
+        return { ...(data as T), id };
+    }
+
+    async updateInTransaction(
+        tx: FirebaseFirestore.Transaction,
+        id: ID,
+        data: Partial<T>
+    ): Promise<void> {
+        const docRef = this.col().doc(id);
+        const validData = this.validator ? this.validator.parseUpdate(data) : data;
+        tx.set(docRef, validData, { merge: true });
+    }
+
+    async createInTransaction(
+        tx: FirebaseFirestore.Transaction,
+        data: T
+    ): Promise<T & { id: ID }> {
+        const validData = this.validator ? this.validator.parseCreate(data) : data;
+        const docRef = this.col().doc();
+        const docData = { ...validData, deletedAt: null } as any;
+        tx.set(docRef, docData);
+
+        return { ...docData, id: docRef.id };
+    }
+
+    async deleteInTransaction(
+        tx: FirebaseFirestore.Transaction,
+        id: ID,
+    ): Promise<void> {
+        const docRef = this.col().doc(id);
+        tx.delete(docRef);
+    }
+
 }

@@ -6,8 +6,9 @@ import { Timestamp } from 'firebase-admin/firestore';
 export const userSchema = z.object({
     name: z.string().min(1, 'Name is required'),
     email: z.email('Email is invalid'),
+    balance: z.number().default(0),
     createdAt: z.string().default(() => new Date().toISOString()).optional(),
-    
+    deletedAt: z.iso.datetime().optional(),
 });
 
 export type User = z.infer<typeof userSchema> & { id?: string };

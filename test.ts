@@ -5,6 +5,7 @@ import { FirestoreRepository } from './src/index';
 import { User, userSchema, } from './src/schemas/User';
 import { NotFoundError, ValidationError, FirestoreIndexError } from './src/core/Errors';
 import { email } from 'zod';
+import { ja } from 'zod/locales';
 
 const serviceAccount = require('./firebase-service-account.json')
 
@@ -17,6 +18,20 @@ async function main(){
     console.log('RUNNING MAIN SCRIPT...');
 
     const userRepo = FirestoreRepository.withSchema<User>(db, 'users', userSchema);
+
+    // const page1 = await userRepo.query().orderBy('name').paginate(1);
+    // const page2 = await userRepo.query().orderBy('name').paginate(2, page1.nextCursorId);
+    await userRepo.bulkSoftDelete(['Nv8sbe9wGTcETnSZuaZ0']);
+    const deleted = await userRepo.query().onlyDeleted().orderBy('deletedAt', 'desc').count();
+
+    console.log('DELETED', deleted);
+
+    // const activeAccounts = await userRepo
+    //     .query()
+    //     .where('balance', '>', 10)
+    //     .select('name', 'email', 'balance')
+    //     .get()
+    // console.log('ACTIVE ACCOUNTS', activeAccounts);
 
     // const activeUsers = await userRepo
     //     .query()
@@ -38,10 +53,11 @@ async function main(){
     // console.log(`Purged ${purgedCount} users`)
 
     // const users = await userRepo.bulkCreate([
-    //     { name: 'jason', email: 'jason@gmail.com' },
-    //     { name: 'hbfl3x', email: 'hbfl3x@gmail.com' },
-    //     { name: 'dean', email: 'dean@gmail.com' },
+    //     { name: 'jason', email: 'jason@gmail.com', balance: 100 },
+    //     { name: 'hbfl3x', email: 'hbfl3x@gmail.com', balance: 0 },
+    //     { name: 'dean', email: 'dean@gmail.com', balance: 10 },
     // ]);
+    // console.log('USERS CREATED', users);
 
     // const restored = await userRepo.restoreAll();
 
@@ -51,11 +67,26 @@ async function main(){
     //     Array.from({ length: 1200 }, (_, i) => ({ name: `User${i}`, email: `user${i}@gmail.com` } as any))
     // );
 
-    const users = await userRepo.query().get();
-    const softRestored = await userRepo.bulkDelete(users.map(u => u.id));
+    // const users = await userRepo.query().get();
+    // const softRestored = await userRepo.bulkDelete(users.map(u => u.id));
 
-    console.log(`DELETED USERS ${softRestored}`);
+    // console.log(`DELETED USERS ${softRestored}`);
 
+    // await userRepo.runInTransaction(async (tx, repo) => {
+    //     const hbId = '6JciHoJJEm5nzFQzgMIA';
+    //     const jasonId = 'Nv8sbe9wGTcETnSZuaZ0';
+
+    //     const jason = await repo.getForUpdate(tx, jasonId);
+    //     const hb = await repo.getForUpdate(tx, hbId);
+
+
+    //     if(!jason || !hb) throw new NotFoundError('One of the users does not exist');
+    //     if(hb.balance < 50) throw new Error('Insufficient funds');
+
+    //     await repo.updateInTransaction(tx, hbId, { balance: hb.balance - 100 })
+    //     await repo.updateInTransaction(tx, jasonId, { balance: jason.balance + 100 });
+    //     console.log('DONE');
+    // });
 
     // const recentUsers = await userRepo
     //     .query()

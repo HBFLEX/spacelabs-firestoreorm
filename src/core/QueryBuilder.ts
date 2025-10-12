@@ -1,7 +1,37 @@
 import { parseFirestoreError } from './ErrorParser';
 import { ID } from './FirestoreRepository';
-import { CollectionReference, Query, QuerySnapshot } from 'firebase-admin/firestore';
+import { CollectionReference, Query, QuerySnapshot, Timestamp } from 'firebase-admin/firestore';
 
+
+type Scalar = string | number | boolean | Date | Timestamp;
+type EqOps = '==' | '!=';
+type CmpOps = '<' | '<=' | '>' | '>=';
+type InOps = 'in' | 'not-in';
+type ArrOps = 'array-contains' | 'array-contains-any';
+
+type WhereOpsForValue<V> =
+  V extends readonly (infer E)[] | (infer E)[]
+    ? EqOps | ArrOps
+    : V extends string | number | Date | Timestamp
+      ? EqOps | CmpOps | InOps
+      : V extends boolean
+        ? EqOps | InOps
+        : EqOps;
+
+type WhereValueForOp<V, Op> =
+  Op extends 'in' | 'not-in'
+    ? V extends readonly (infer E)[] | (infer E)[]
+      ? E[]
+      : V[]
+    : Op extends 'array-contains'
+      ? V extends readonly (infer E)[] | (infer E)[]
+        ? E 
+        : never
+    : Op extends 'array-contains-any'
+      ? V extends readonly (infer E)[] | (infer E)[]
+        ? E[]
+        : never
+    : V;
 
 
 export class FirestoreQueryBuilder<T extends { id?: string }> {
@@ -27,12 +57,12 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
         return this;
     }
 
-    where<K extends keyof T>(
+    where<K extends keyof T, Op extends WhereOpsForValue<T[K]>>(
         field: K,
-        op: FirebaseFirestore.WhereFilterOp,
-        value: T[K]
+        op: Op,
+        value: WhereValueForOp<T[K], Op>
     ): this {
-        this.query = this.query.where(field as string, op, value);
+        this.query = this.query.where(field as string, op as any, value as any);
         return this;
     }
 
@@ -52,8 +82,18 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
     }
 
     async count(): Promise<number> {
-        const snapshot = await this.query.count().get();
+        const finalQuery = await this.applySoftDeleteFilter(this.query);
+        const snapshot = await finalQuery.count().get();
         return snapshot.data().count;
+    }
+
+    async totalCount(): Promise<number> {
+        try{
+            const snapshot = await this.collectionRef.count().get();
+            return snapshot.data().count;
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
     }
 
     async startAfterId(id: ID): Promise<this> {
@@ -62,12 +102,49 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
         return this;
     }
 
+    async paginate(limit: number, cursorId?: ID): Promise<{
+        items: (T & { id: ID })[];
+        nextCursorId: ID | undefined;
+    }> {
+        try{
+            let finalQuery = await this.applySoftDeleteFilter(this.query);
+
+            if(cursorId){
+                const startDoc = await this.collectionRef.doc(cursorId).get()
+                if(startDoc.exists) finalQuery = await finalQuery.startAfter(startDoc);
+            }
+
+            finalQuery = await finalQuery.limit(limit);
+            const snapshot: QuerySnapshot = await finalQuery.get();
+            const items = snapshot.docs.map(doc => ({ ...(doc.data() as T), id: doc.id }));
+
+            const last = snapshot.docs[snapshot.docs.length - 1];
+            const nextCursorId = last ? last.id as ID : undefined;
+
+            return { items, nextCursorId };
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
+    }
+
+    async paginateWithCount(
+        limit: number,
+        cursorId?: ID
+    ): Promise<{ items: (T & { id: ID })[]; nextCursorId: ID | undefined; total: number }> {
+        const total = await this.count();
+        const { items, nextCursorId } = await this.paginate(limit, cursorId);
+        return { items, nextCursorId, total };
+    }
+
+    async applySoftDeleteFilter(q: Query): Promise<Query> {
+        if(this.onlyDeletedFlag) return q.where('deletedAt', '!=', null);
+        if(!this.includeDeletedFlag) return q.where('deletedAt', '==', null);
+        return q;
+    }
+
     async get(): Promise<(T & { id: ID })[]>{
         try{
-            let finalQuery = this.query;
-            if(this.onlyDeletedFlag) finalQuery = finalQuery.where('deletedAt', '!=', null);
-            else if (!this.includeDeletedFlag) finalQuery = finalQuery.where('deletedAt', '==', null)
-
+            const finalQuery = await this.applySoftDeleteFilter(this.query);
             const snapshot: QuerySnapshot = await finalQuery.get();
             return snapshot.docs.map(doc => ({ ...(doc.data() as T), id: doc.id }));
         }catch(error: any){
