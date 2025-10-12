@@ -4,6 +4,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { FirestoreRepository } from './src/index';
 import { User, userSchema, } from './src/schemas/User';
 import { NotFoundError, ValidationError, FirestoreIndexError } from './src/core/Errors';
+import { email } from 'zod';
 
 const serviceAccount = require('./firebase-service-account.json')
 
@@ -36,13 +37,25 @@ async function main(){
     // const purgedCount = await userRepo.purgeDelete();
     // console.log(`Purged ${purgedCount} users`)
 
-    const users = await userRepo.bulkDelete([
-        '4QrsQRQL0H9nn02YwWhc',
-        'xztjYN37VuaxKGDbcM0c',
-        'QXsMCtioXtWElIf7eoHT',
-    ]);
+    // const users = await userRepo.bulkCreate([
+    //     { name: 'jason', email: 'jason@gmail.com' },
+    //     { name: 'hbfl3x', email: 'hbfl3x@gmail.com' },
+    //     { name: 'dean', email: 'dean@gmail.com' },
+    // ]);
 
-    console.log('DELETED USERS', users);
+    // const restored = await userRepo.restoreAll();
+
+    // console.log('RESTORED USERS', restored);
+
+    // const users = await userRepo.bulkCreate(
+    //     Array.from({ length: 1200 }, (_, i) => ({ name: `User${i}`, email: `user${i}@gmail.com` } as any))
+    // );
+
+    const users = await userRepo.query().get();
+    const softRestored = await userRepo.bulkDelete(users.map(u => u.id));
+
+    console.log(`DELETED USERS ${softRestored}`);
+
 
     // const recentUsers = await userRepo
     //     .query()

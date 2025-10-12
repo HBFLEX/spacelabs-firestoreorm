@@ -42,20 +42,20 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     async bulkCreate(dataArray: T[]): Promise<(T & { id: ID })[]> {
         try{
-            const batch = this.db.batch();
             const colRef = this.col();
             const createdDocs: (T & {id: ID})[] = [];
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
 
             for(const data of dataArray){
                 const validData = this.validator ? this.validator.parseCreate(data) : data;
                 const docRef = colRef.doc();
                 const docData = { ...validData, deletedAt: null } as any;
 
-                batch.set(docRef, docData);
+                actions.push(batch => batch.set(docRef, docData))
                 createdDocs.push({ ...docData, id: docRef.id });
             }
 
-            await batch.commit();
+            await this.commitInChunks(actions);
             return createdDocs;
         }catch(error: any){
             if(error instanceof z.ZodError) throw new ValidationError(error.issues);
@@ -98,8 +98,8 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     async bulkUpdate(updates: { id: ID, data: Partial<T> }[]): Promise<(T & { id: ID })[]> {
         try{
-            const batch = this.db.batch();
             const updatedDocs: (T & { id: ID })[] = [];
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
 
             for(const { id, data } of updates){
                 const docRef = this.col().doc(id);
@@ -109,32 +109,14 @@ export class FirestoreRepository<T extends { id?: ID }> {
                 const validData = this.validator ? this.validator.parseUpdate(data) : data;
                 const merged = { ...snapshot.data(), ...validData, id };
 
-                batch.set(docRef, merged, { merge: true });
+                actions.push(batch => batch.set(docRef, merged, { merge: true }));
                 updatedDocs.push(merged as (T & { id: ID }));
             }
 
-            await batch.commit();
+            await this.commitInChunks(actions);
             return updatedDocs;
         }catch(error: any){
             if(error instanceof z.ZodError) throw new ValidationError(error.issues);
-            throw parseFirestoreError(error);
-        }
-    }
-
-    async bulkDelete(ids: ID[]): Promise<number> {
-        try{
-            const batch = this.db.batch();
-            let counter = 0;
-
-            for(const id of ids){
-                const docRef = this.col().doc(id);
-                batch.delete(docRef);
-                counter++;
-            }
-
-            await batch.commit();
-            return counter;
-        }catch(error: any){
             throw parseFirestoreError(error);
         }
     }
@@ -151,6 +133,21 @@ export class FirestoreRepository<T extends { id?: ID }> {
         }
     }
 
+    async bulkDelete(ids: ID[]): Promise<number> {
+        try{
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
+            for(const id of ids){
+                const docRef = this.col().doc(id);
+                actions.push(batch => batch.delete(docRef));
+            }
+
+            await this.commitInChunks(actions);
+            return ids.length;
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
+    }
+
     async softDelete(id: ID): Promise<void> {
         try{
             const docRef = await this.col().doc(id);
@@ -158,6 +155,20 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
             if(!snapshot.exists) throw new NotFoundError(`Document with ID ${id} not found`);
             await docRef.update({ deletedAt: new Date().toISOString() });
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
+    }
+
+    async bulkSoftDelete(ids: ID[]): Promise<number> {
+        try{
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
+            for(const id of ids){
+                const docRef = this.col().doc(id);
+                actions.push(batch => batch.update(docRef, { deletedAt: new Date().toISOString() }));
+            }
+            await this.commitInChunks(actions);
+            return ids.length;
         }catch(error: any){
             throw parseFirestoreError(error);
         }
@@ -207,15 +218,14 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     async restoreAll(): Promise<number>{
         try{
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
             const snapshot = await this.col().where('deletedAt', '!=', null).get();
             if(snapshot.empty) return 0;
 
-            const batch = this.db.batch();
-            snapshot.docs.forEach(doc => {
-                batch.update(doc.ref, { deletedAt: null });
-            });
-
-            await batch.commit();
+            for(const doc of snapshot.docs){
+                actions.push(batch => batch.update(doc.ref, { deletedAt: null }));
+            }
+            await this.commitInChunks(actions);
             return snapshot.size;
         }catch(error: any){
             throw parseFirestoreError(error);
@@ -252,5 +262,25 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     query(): FirestoreQueryBuilder<T>{
         return new FirestoreQueryBuilder<T>(this.col(), this.col());
+    }
+
+    private async commitInChunks(
+        actions: ((batch: FirebaseFirestore.WriteBatch) => void)[]
+    ): Promise<void> {
+        let batch = this.db.batch();
+        let counter = 0;
+
+        for(const action of actions){
+            action(batch);
+            counter++;
+
+            if(counter === 500){
+                await batch.commit();
+                batch = this.db.batch();
+                counter = 0;
+            }
+        }
+
+        if(counter > 0) await batch.commit();
     }
 }
