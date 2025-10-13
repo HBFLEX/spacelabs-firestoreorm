@@ -19,12 +19,59 @@ async function main(){
 
     const userRepo = FirestoreRepository.withSchema<User>(db, 'users', userSchema);
 
+    // userRepo.on('beforeCreate', async (data) => {
+    //     console.log('applied deletedAt');
+    //     data.deletedAt = new Date().toISOString();
+    // });
+
+    // userRepo.on('afterCreate', (data) => {
+    //     console.log(`WELCOME TO OUR SITE: ${data.name} (${data.email})`);
+    // });
+
+    // userRepo.on('beforeUpdate', async (data) => {
+    //     console.log('RUN BEFORE UPDATE');
+    // });
+
+    // userRepo.on('afterUpdate', async (data) => {
+    //     data.deletedAt = null;
+    //     console.log('updated succesfully');
+    // });
+
+    // userRepo.on('beforeDelete', async(data) => {
+    //     data.balance = 1000;
+    //     console.log('before delete', data);
+    // });
+
+    // userRepo.on('afterDelete', async(data) => {
+    //     console.log('AFTER DELETE', data);
+    // })
+
+    userRepo.on('beforeBulkDelete', async(data) => {
+        console.log(`Deleting ${data.ids.length} total users`);
+    });
+
+    userRepo.on('afterBulkDelete', async(data) => {
+        data.documents.forEach(doc => console.log(`${doc.email} - your data has been deleted`));
+    });
+
+    const users = await userRepo.bulkDelete([
+        '0EgWFGw29mWetS6Pfm62', '0HHzhjK4A6unEuY1i7DD',
+        '0NNK9GhFBCD9wvbvbELZ', '0VTAHhVwlsitgfItIhxp'
+    ]);
+    console.log('USER DELETED', users);
+
+    // const users = await userRepo.bulkCreate(
+    //     Array.from({ length: 1000 }, (_, i) => ({ name: `User${i}`, email: `user${i}@gmail.com`, balance: 100 })),
+    // );
+
+    // console.log(`CREATED ${users.length} total users`);
+
     // const page1 = await userRepo.query().orderBy('name').paginate(1);
     // const page2 = await userRepo.query().orderBy('name').paginate(2, page1.nextCursorId);
-    await userRepo.bulkSoftDelete(['Nv8sbe9wGTcETnSZuaZ0']);
-    const deleted = await userRepo.query().onlyDeleted().orderBy('deletedAt', 'desc').count();
+    // await userRepo.bulkSoftDelete(['Nv8sbe9wGTcETnSZuaZ0']);
+    // const deleted = await userRepo.query().onlyDeleted().orderBy('deletedAt', 'desc').count();
 
-    console.log('DELETED', deleted);
+    // console.log('DELETED', deleted);
 
     // const activeAccounts = await userRepo
     //     .query()

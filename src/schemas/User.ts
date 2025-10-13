@@ -8,7 +8,7 @@ export const userSchema = z.object({
     email: z.email('Email is invalid'),
     balance: z.number().default(0),
     createdAt: z.string().default(() => new Date().toISOString()).optional(),
-    deletedAt: z.iso.datetime().optional(),
+    deletedAt: z.iso.datetime().nullable().optional(),
 });
 
 export type User = z.infer<typeof userSchema> & { id?: string };
