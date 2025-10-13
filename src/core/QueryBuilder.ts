@@ -1,6 +1,6 @@
 import { parseFirestoreError } from './ErrorParser';
-import { ID } from './FirestoreRepository';
-import { CollectionReference, Query, QuerySnapshot, Timestamp } from 'firebase-admin/firestore';
+import { HookEvent, ID } from './FirestoreRepository';
+import { CollectionReference, Firestore, Query, QuerySnapshot, Timestamp } from 'firebase-admin/firestore';
 
 
 type Scalar = string | number | boolean | Date | Timestamp;
@@ -33,6 +33,8 @@ type WhereValueForOp<V, Op> =
         : never
     : V;
 
+type FirestoreWriteBatch = (actions: ((batch: FirebaseFirestore.WriteBatch) => void)[]) => Promise<void>;
+type RunHook = (event: HookEvent, data: any) => Promise<void>;
 
 export class FirestoreQueryBuilder<T extends { id?: string }> {
     private query: Query;
@@ -42,6 +44,9 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
     constructor(
         private baseQuery: Query, 
         private collectionRef: CollectionReference,
+        private db: Firestore,
+        private commitInChunks:FirestoreWriteBatch,
+        private runHooks: RunHook,
     ){
         this.query = baseQuery;
     }
@@ -79,6 +84,54 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
     limit(n: number): this {
         this.query = this.query.limit(n);
         return this;
+    }
+
+    async delete(): Promise<number> {
+        try{
+            const docsData: (T & { id: ID })[] = [];
+            const finalQuery = await this.applySoftDeleteFilter(this.query);
+            const snapshot = await finalQuery.get();
+
+            if(snapshot.empty) return 0;
+            for(const doc of snapshot.docs) docsData.push({ ...doc.data() as T, id: doc.id });
+
+            const ids = docsData.map(doc => doc.id);
+            await this.runHooks('beforeBulkDelete', { ids, documents: docsData });
+
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
+            for(const doc of snapshot.docs) actions.push(batch => batch.delete(doc.ref));
+
+            await this.commitInChunks(actions);
+            await this.runHooks('afterBulkDelete', { ids, documents: docsData });
+            return snapshot.size;
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
+    }
+
+    async softDelete(): Promise<number> {
+        try{
+            const finalQuery = await this.applySoftDeleteFilter(this.query);
+            const snapshot = await finalQuery.get();
+            if(snapshot.empty) return 0;
+
+            const docsData: (T & { id: ID })[] = [];
+
+            for(const doc of snapshot.docs) docsData.push({ ...doc.data() as T, id: doc.id });
+            const ids = docsData.map(doc => doc.id);
+            await this.runHooks('beforeBulkSoftDelete', { ids, documents: docsData });
+
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
+            for(const doc of snapshot.docs){
+                actions.push(batch => batch.update(doc.ref, { deletedAt: new Date().toISOString() }));
+            }
+
+            await this.commitInChunks(actions);
+            await this.runHooks('afterBulkSoftDelete', { ids, documents: docsData });
+            return snapshot.size;
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
     }
 
     async count(): Promise<number> {

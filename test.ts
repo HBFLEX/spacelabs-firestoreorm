@@ -54,11 +54,14 @@ async function main(){
         data.documents.forEach(doc => console.log(`${doc.email} - your data has been deleted`));
     });
 
-    const users = await userRepo.bulkDelete([
-        '0EgWFGw29mWetS6Pfm62', '0HHzhjK4A6unEuY1i7DD',
-        '0NNK9GhFBCD9wvbvbELZ', '0VTAHhVwlsitgfItIhxp'
-    ]);
-    console.log('USER DELETED', users);
+    const users = await userRepo.query().includeDeleted().where('deletedAt', '!=', null).delete();
+    console.log('DELETED USERS', users);
+
+    // const users = await userRepo.bulkDelete([
+    //     '0EgWFGw29mWetS6Pfm62', '0HHzhjK4A6unEuY1i7DD',
+    //     '0NNK9GhFBCD9wvbvbELZ', '0VTAHhVwlsitgfItIhxp'
+    // ]);
+    // console.log('USER DELETED', users);
 
     // const users = await userRepo.bulkCreate(
     //     Array.from({ length: 1000 }, (_, i) => ({ name: `User${i}`, email: `user${i}@gmail.com`, balance: 100 })),
