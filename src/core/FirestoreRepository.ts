@@ -39,16 +39,28 @@ type AnyHookFn<T> =
     | BulkSoftDeleteHookFn<T>
     | BulkRestoreHookFn<T>;
 
+interface SubcollectionPath {
+    parentId: ID;
+    subcollectionName: string;
+};
+
 
 export class FirestoreRepository<T extends { id?: ID }> {
     private hooks: { [K in HookEvent]?: AnyHookFn<T>[] } = {};
+    private parentPath?: string;
 
     constructor(
         private db: Firestore, 
-        private collection: string,
+        private collectionPath: string,
         private validator?: Validator<T>,
-    ) {}
+        parentPath?: string
+    ) {
+        this.parentPath = parentPath;
+    }
 
+    /**
+     * Create repository with Zod schema validation
+     */
     static withSchema<U extends { id?: ID }>(
         db: Firestore,
         collection: string,
@@ -56,6 +68,64 @@ export class FirestoreRepository<T extends { id?: ID }> {
     ): FirestoreRepository<U> {
         const validator = makeValidator(schema) as Validator<U>;
         return new FirestoreRepository<U>(db, collection, validator);
+    }
+
+    /**
+     * Access a subcollection under a specific parent document
+     *
+     * @example
+     * // Access orders for a specific user
+     * const userOrders = userRepo.subcollection<Order>('user-123', 'orders');
+     * await userOrders.create({ product: 'Widget', price: 99 });
+     *
+     * @example
+     * // With schema validation
+     * const userOrders = userRepo.subcollection<Order>(
+     *   'user-123',
+     *   'orders',
+     *   orderSchema
+     * );
+     *
+     * @example
+     * // Nested subcollections
+     * const comments = postRepo
+     *   .subcollection<Comment>('post-123', 'comments')
+     *   .subcollection<Reply>('comment-456', 'replies');
+     */
+    subcollection<S extends { id?: ID }>(
+        parentId: ID,
+        subcollectionName: string,
+        schema?: z.ZodObject<any>
+    ): FirestoreRepository<S>{
+        const newPath = `${this.collectionPath}/${parentId}/${subcollectionName}`;
+        const validator = schema ? makeValidator(schema) as Validator<S> : undefined;
+
+        return new FirestoreRepository<S>(
+            this.db,
+            newPath,
+            validator,
+            newPath, // for tracking parent path for reference
+        );
+    }
+
+    /**
+     * Get the parent document ID if this is a subcollection
+     * Returns null for top-level collections
+     */
+    getParentId(): ID | null {
+        if(!this.parentPath) return null;
+        // extract parent ID
+        const parts = this.collectionPath.split('/');
+        if(parts.length < 2) return null;
+        return parts[parts.length - 2];
+    }
+
+    getCollectionPath(): string {
+        return this.collectionPath;
+    }
+
+    isSubcollection(): boolean {
+        return this.collectionPath.includes('/');
     }
 
     on(event: SingleHookEvent, fn: SingleHookFn<T>): void;
@@ -75,7 +145,7 @@ export class FirestoreRepository<T extends { id?: ID }> {
     }
 
     private col(){
-        return this.db.collection(this.collection);
+        return this.db.collection(this.collectionPath);
     }
 
     async create(data: T): Promise<T & { id: ID }> {
@@ -469,9 +539,14 @@ export class FirestoreRepository<T extends { id?: ID }> {
     ): Promise<R> {
         try{
             return await this.db.runTransaction(async (tx) => {
-                const txRepo = new FirestoreRepository<T>(this.db, this.collection, this.validator);
+                const txRepo = new FirestoreRepository<T>(
+                    this.db,
+                    this.collectionPath,
+                    this.validator,
+                    this.parentPath
+                );
                 // override col() to use transaction reads/writes
-                (txRepo as any).col = () => this.db.collection(this.collection);
+                (txRepo as any).col = () => this.db.collection(this.collectionPath);
                 // pass transaction + repo to user callback
                 return await fn(tx, txRepo);
             });

@@ -13,6 +13,7 @@ lerna-debug.log*
 .env.test
 
 # Editors
+dist
 .vscode/
 .idea/
 *.suo

@@ -3,7 +3,8 @@ import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { string, z } from 'zod';
 
-// Initialize Firebase (use your credentials)
+// add your service account path here
+// NOTE: it will delete the benchmark collection in db after test completion
 const serviceAccount = require('../../firebase-service-account.json');
 const app = initializeApp({
     credential: cert(serviceAccount)
@@ -34,51 +35,51 @@ async function runBenchmarks() {
     await repo.query().delete();
 
     // Test 1: Bulk Create Performance
-    console.log('📊 Bulk Create Tests:');
+    console.log('Bulk Create Tests:');
     const data10 = Array.from({ length: 10 }, (_, i) => ({
         name: `test-${i}`,
         value: i,
         createdAt: new Date().toISOString()
     }));
     
-    const data100 = Array.from({ length: 100 }, (_, i) => ({
+    const data1000 = Array.from({ length: 1000 }, (_, i) => ({
         name: `test-${i}`,
         value: i,
         createdAt: new Date().toISOString()
     }));
 
     await benchmark('  10 documents', () => repo.bulkCreate(data10));
-    await benchmark(' 100 documents', () => repo.bulkCreate(data100));
+    await benchmark(' 1000 documents', () => repo.bulkCreate(data1000));
     
     // Test 2: Bulk Read Performance
-    console.log('\n📖 Bulk Read Tests:');
+    console.log('\nBulk Read Tests:');
     const allDocs = await repo.query().get();
     const ids10 = allDocs.slice(0, 10).map(d => d.id);
-    const ids100 = allDocs.slice(0, 100).map(d => d.id);
+    const ids1000 = allDocs.slice(0, 1000).map(d => d.id);
 
     await benchmark('  10 documents (getById)', async () => {
         await Promise.all(ids10.map(id => repo.getById(id)));
     });
     
-    await benchmark(' 100 documents (getById)', async () => {
-        await Promise.all(ids100.map(id => repo.getById(id)));
+    await benchmark(' 1000 documents (getById)', async () => {
+        await Promise.all(ids1000.map(id => repo.getById(id)));
     });
 
     // Test 3: Bulk Update Performance
-    console.log('\n✏️  Bulk Update Tests:');
+    console.log('\nBulk Update Tests:');
     const updates10 = ids10.map(id => ({ id, data: { value: 999 } }));
-    const updates100 = ids100.map(id => ({ id, data: { value: 999 } }));
+    const updates1000 = ids1000.map(id => ({ id, data: { value: 999 } }));
 
     await benchmark('  10 documents', () => repo.bulkUpdate(updates10));
-    await benchmark(' 100 documents', () => repo.bulkUpdate(updates100));
+    await benchmark(' 1000 documents', () => repo.bulkUpdate(updates1000));
 
     // Test 4: Bulk Soft Delete Performance
-    console.log('\n🗑️  Bulk Soft Delete Tests:');
+    console.log('\nBulk Soft Delete Tests:');
     await benchmark('  10 documents', () => repo.bulkSoftDelete(ids10));
-    await benchmark(' 100 documents', () => repo.bulkSoftDelete(ids100));
+    await benchmark(' 1000 documents', () => repo.bulkSoftDelete(ids1000));
 
     // Test 5: Query Performance
-    console.log('\n🔍 Query Tests:');
+    console.log('\nQuery Tests:');
     await benchmark(' Simple where query', () => 
         repo.query().where('value', '==', 999).get()
     );
@@ -96,15 +97,15 @@ async function runBenchmarks() {
     );
 
     // Test 6: Count Performance
-    console.log('\n🔢 Count Tests:');
+    console.log('\nCount Tests:');
     await benchmark(' Count all documents', () => repo.query().count());
     await benchmark(' Total count', () => repo.query().totalCount());
 
     // Cleanup
-    console.log('\n🧹 Cleaning up...');
+    console.log('\nCleaning up...');
     await repo.query().includeDeleted().delete();
     
-    console.log('\n✅ Benchmarks Complete!');
+    console.log('\nBenchmarks Complete!');
     process.exit(0);
 }
 

@@ -76,6 +76,54 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
         return this;
     }
 
+    /**
+     * Update all documents matching the query
+     *
+     * @example
+     * // Update all pending orders to shipped
+     * await ordersRepo.query()
+     *   .where('status', '==', 'pending')
+     *   .update({ status: 'shipped' });
+     *
+     * @example
+     * // Update with multiple fields
+     * await ordersRepo.query()
+     *   .where('category', '==', 'electronics')
+     *   .update({
+     *     discount: 0.1,
+     *     updatedAt: new Date().toISOString()
+     *   });
+     */
+    async update(data: Partial<T>): Promise<number> {
+        try{
+            const finalQuery = this.applySoftDeleteFilter(this.query);
+            const snapshot = await finalQuery.get();
+
+            if(snapshot.empty) return 0;
+
+            const docsData: (T & { id: ID })[] = [];
+
+            for(const doc of snapshot.docs) docsData.push({ ...(doc.data() as T), id: doc.id });
+
+            const updates = docsData.map(doc => ({
+                id: doc.id,
+                data
+            }));
+
+            await this.runHooks('beforeBulkUpdate', updates);
+
+            const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
+            for(const doc of snapshot.docs)
+                actions.push(batch => batch.update(doc.ref, data as any));
+
+            await this.commitInChunks(actions);
+            await this.runHooks('afterBulkUpdate', updates);
+            return snapshot.size;
+        }catch(error){
+            throw parseFirestoreError(error);
+        }
+    }
+
     orderBy(field: keyof T, direction: 'asc' | 'desc' = 'asc'): this {
         this.query = this.query.orderBy(field as string, direction);
         return this;
