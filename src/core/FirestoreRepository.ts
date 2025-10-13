@@ -5,9 +5,11 @@ import { NotFoundError, ValidationError } from './Errors';
 import { FirestoreQueryBuilder } from './QueryBuilder';
 import { parseFirestoreError } from './ErrorParser';
 
+
 export type ID = string;
 type SingleHookEvent = 
-    | 'beforeCreate' | 'afterCreate' 
+    | 'beforeCreate' | 'afterCreate'
+    | 'beforeSoftDelete' | 'afterSoftDelete'
     | 'beforeUpdate' | 'afterUpdate'
     | 'beforeDelete' | 'afterDelete'
     | 'beforeRestore' | 'afterRestore';
@@ -194,6 +196,30 @@ export class FirestoreRepository<T extends { id?: ID }> {
         }
     }
 
+    async upsert(id: ID, data: T): Promise<T & { id: ID }> {
+        try{
+            const existing = await this.getById(id);
+            if(existing) return await this.update(id, data);
+
+            const validData = this.validator ? this.validator.parseCreate(data) : data;
+            const docToCreate = { ...validData, deletedAt: null };
+
+            await this.runHooks('beforeCreate', { ...docToCreate, id });
+
+            const docRef = this.col().doc(id);
+            await docRef.set(docToCreate as any);
+            const created = { ...docToCreate, id };
+
+            await this.runHooks('afterCreate', created);
+            return created;
+        }catch(error: any){
+            if(error instanceof z.ZodError){
+                throw new ValidationError(error.issues);
+            }
+            throw parseFirestoreError(error);
+        }
+    }
+
     async delete(id: ID): Promise<void> {
         try{
             const docRef = await this.col().doc(id);
@@ -225,7 +251,7 @@ export class FirestoreRepository<T extends { id?: ID }> {
                 })
             );
 
-            if(docsData.length == 0) throw new NotFoundError(`No documents found with provided IDs`);
+            if(docsData.length == 0) return 0;
 
             await this.runHooks('beforeBulkDelete', {
                 ids: docsData.map(d => d.id),
@@ -258,9 +284,9 @@ export class FirestoreRepository<T extends { id?: ID }> {
             const docData = { ...snapshot.data() as T, id };
             const deletedAt = new Date().toISOString();
 
-            await this.runHooks('beforeDelete', { ...docData, deletedAt });
+            await this.runHooks('beforeSoftDelete', { ...docData, deletedAt });
             await docRef.update({ deletedAt });
-            await this.runHooks('afterDelete', { ...docData, deletedAt });
+            await this.runHooks('afterSoftDelete', { ...docData, deletedAt });
         }catch(error: any){
             throw parseFirestoreError(error);
         }
@@ -474,29 +500,58 @@ export class FirestoreRepository<T extends { id?: ID }> {
         id: ID,
         data: Partial<T>
     ): Promise<void> {
-        const docRef = this.col().doc(id);
-        const validData = this.validator ? this.validator.parseUpdate(data) : data;
-        tx.set(docRef, validData, { merge: true });
+        try{
+            const docRef = this.col().doc(id);
+            const validData = this.validator ? this.validator.parseUpdate(data) : data;
+
+            const toUpdate = { ...validData, id };
+            await this.runHooks('beforeUpdate', toUpdate);
+            tx.set(docRef, validData, { merge: true });
+        }catch(error: any){
+            if(error instanceof z.ZodError){
+                throw new ValidationError(error.issues);
+            }
+            throw parseFirestoreError(error);
+        }
     }
 
     async createInTransaction(
         tx: FirebaseFirestore.Transaction,
         data: T
     ): Promise<T & { id: ID }> {
-        const validData = this.validator ? this.validator.parseCreate(data) : data;
-        const docRef = this.col().doc();
-        const docData = { ...validData, deletedAt: null } as any;
-        tx.set(docRef, docData);
+        try{
+            const validData = this.validator ? this.validator.parseCreate(data) : data;
+            const docRef = this.col().doc();
+            const docData = { ...validData, deletedAt: null } as any;
 
-        return { ...docData, id: docRef.id };
+            await this.runHooks('beforeCreate', { ...docData, id: docRef.id });
+            tx.set(docRef, docData);
+
+            return { ...docData, id: docRef.id };
+        }catch(error: any){
+            if(error instanceof z.ZodError){
+                throw new ValidationError(error.issues);
+            }
+            throw parseFirestoreError(error);
+        }
     }
 
     async deleteInTransaction(
         tx: FirebaseFirestore.Transaction,
         id: ID,
     ): Promise<void> {
-        const docRef = this.col().doc(id);
-        tx.delete(docRef);
+        try{
+            const docRef = this.col().doc(id);
+            const snapshot = await tx.get(docRef);
+
+            if(!snapshot.exists) throw new NotFoundError(`Document with ID ${id} not found`);
+
+            const docData = { ...snapshot.data() as T, id };
+            await this.runHooks('beforeDelete', docData);
+            tx.delete(docRef);
+        }catch(error: any){
+            throw parseFirestoreError(error);
+        }
     }
 
 }

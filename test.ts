@@ -46,22 +46,57 @@ async function main(){
     //     console.log('AFTER DELETE', data);
     // })
 
-    userRepo.on('beforeBulkDelete', async(data) => {
-        console.log(`Deleting ${data.ids.length} total users`);
-    });
+    // userRepo.on('beforeBulkDelete', async(data) => {
+    //     console.log(`Deleting ${data.ids.length} total users`);
+    // });
 
-    userRepo.on('afterBulkDelete', async(data) => {
-        data.documents.forEach(doc => console.log(`${doc.email} - your data has been deleted`));
-    });
+    // userRepo.on('afterBulkDelete', async(data) => {
+    //     data.documents.forEach(doc => console.log(`${doc.email} - your data has been deleted`));
+    // });
 
-    const users = await userRepo.query().includeDeleted().where('deletedAt', '!=', null).delete();
-    console.log('DELETED USERS', users);
+    // const users = await userRepo.query().includeDeleted().where('deletedAt', '!=', null).delete();
+    // console.log('DELETED USERS', users);
 
     // const users = await userRepo.bulkDelete([
     //     '0EgWFGw29mWetS6Pfm62', '0HHzhjK4A6unEuY1i7DD',
     //     '0NNK9GhFBCD9wvbvbELZ', '0VTAHhVwlsitgfItIhxp'
     // ]);
     // console.log('USER DELETED', users);
+
+    // const page1 = await userRepo.query().orderBy('createdAt', 'asc').paginate(10);
+    // console.log('Page 1', page1);
+
+    // const page2 = await userRepo.query().orderBy('createdAt', 'asc').paginate(10, page1.nextCursorId);
+    // console.log('Page 2', page2);
+
+    // const offsetPage = await userRepo.query().orderBy('createdAt', 'asc').offsetPaginate(2, 10);
+    // console.log(`Page ${offsetPage.page} of ${offsetPage.totalPages}`, offsetPage.items);
+
+    // const totalUsersBalance = await userRepo.query().orderBy('createdAt', 'asc').aggregate('balance', 'avg');
+    // console.log('TOTAL BALANCE', totalUsersBalance);
+
+
+    // const unsubscribe = await userRepo.
+    //     query()
+    //     .where('active', '==', true)
+    //     .orderBy('createdAt', 'desc')
+    //     .onSnapshot(users => {
+    //         console.log('ACTIVE USERS UPDATED', users);
+    //     }, error => {
+    //         console.log('SNAPSHOT ERROR', error);
+    //     }
+    // );
+
+    // unsubscribe();
+
+    // for await(const user of userRepo.query().orderBy('createdAt').stream())
+    //     console.log('STREAMING USERS', user.id);
+
+    // const roles = await userRepo.query().orderBy('createdAt', 'asc').distinctValues('role');
+    // console.log('ROLES', roles);
+
+    // const user = await userRepo.query().where('deletedAt', '==', null).exists();
+    // console.log('NON-DELETED USERS', user);
 
     // const users = await userRepo.bulkCreate(
     //     Array.from({ length: 1000 }, (_, i) => ({ name: `User${i}`, email: `user${i}@gmail.com`, balance: 100 })),

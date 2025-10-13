@@ -10,7 +10,7 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
     if(err instanceof ValidationError){
         return res.status(400).json({
             error: 'ValidationError',
-            details: err.details,
+            details: err.issues,
         });
     }
 

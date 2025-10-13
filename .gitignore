@@ -32,6 +32,9 @@ $RECYCLE.BIN/
 coverage/
 .nyc_output/
 
+
+./src/schemas
+./core/TransactionContext.ts
 firebase-service-account.json
 test.ts
 
