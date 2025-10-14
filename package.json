@@ -1,15 +1,14 @@
 {
   "name": "@spacelabstech/firestoreorm",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Type-safe Firestore ORM with validation, soft deletes, lifecycle hooks, and powerful query builder. Built for Firebase Admin SDK with full TypeScript support.",
-  "main": "./dist/src/core/index.js",
-  "types": "./dist/src/core/index.d.ts",
-  "module": "./dist/src/core/index.mjs",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/src/core/index.d.ts",
-      "import": "./dist/src/core/index.mjs",
-      "require": "./dist/src/core/index.js"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [
