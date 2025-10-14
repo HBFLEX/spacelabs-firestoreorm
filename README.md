@@ -1429,6 +1429,7 @@ await accountRepo.runInTransaction(async (tx, repo) => {
 import { z } from 'zod';
 
 export const orderItemSchema = z.object({
+  id: z.string().optional(), 
   productId: z.string(),
   productName: z.string(),
   quantity: z.number().int().positive(),
@@ -1437,6 +1438,7 @@ export const orderItemSchema = z.object({
 });
 
 export const orderSchema = z.object({
+  id: z.string().optional(), 
   userId: z.string(),
   items: z.array(orderItemSchema),
   total: z.number().positive(),
@@ -1620,6 +1622,7 @@ export class OrderService {
 ```typescript
 // schemas/tenant.schema.ts
 export const tenantSchema = z.object({
+  id: z.string().optional(), 
   name: z.string(),
   slug: z.string().regex(/^[a-z0-9-]+$/),
   plan: z.enum(['free', 'pro', 'enterprise']),
@@ -2488,7 +2491,6 @@ Based on testing with Firebase Admin SDK:
 | `transaction` | 2 reads + 2 writes | ~100ms | Atomic operation |
 
 **Notes:**
-- Times are averages from us-central1 region
 - Network latency varies by region
 - Firestore has built-in caching for frequently accessed docs
 
