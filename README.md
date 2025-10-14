@@ -1,4 +1,4 @@
-# @spacelabs/firestoreorm
+# @spacelabstech/firestoreorm
 
 > A type-safe, feature-rich Firestore ORM built for the Firebase Admin SDK. Designed to make backend Firestore development actually enjoyable.
 
@@ -64,15 +64,15 @@ Works seamlessly with:
 ## Installation
 
 ```bash
-npm install @spacelabs/firestoreorm firebase-admin zod
+npm install @spacelabstech/firestoreorm firebase-admin zod
 ```
 
 ```bash
-yarn add @spacelabs/firestoreorm firebase-admin zod
+yarn add @spacelabstech/firestoreorm firebase-admin zod
 ```
 
 ```bash
-pnpm add @spacelabs/firestoreorm firebase-admin zod
+pnpm add @spacelabstech/firestoreorm firebase-admin zod
 ```
 
 ### Peer Dependencies
@@ -116,7 +116,7 @@ export type User = z.infer<typeof userSchema>;
 ### 3. Create Your Repository
 
 ```typescript
-import { FirestoreRepository } from '@spacelabs/firestoreorm';
+import { FirestoreRepository } from '@spacelabstech/firestoreorm';
 import { db } from './firebase';
 import { userSchema, User } from './schemas';
 
@@ -573,7 +573,7 @@ import {
   NotFoundError, 
   ConflictError,
   FirestoreIndexError 
-} from '@spacelabs/firestoreorm';
+} from '@spacelabstech/firestoreorm';
 
 try {
   await userRepo.create(invalidData);
@@ -598,7 +598,7 @@ try {
 The ORM includes a pre-built Express middleware for consistent error responses:
 
 ```typescript
-import { errorHandler } from '@spacelabs/firestoreorm/core/ErrorHandler';
+import { errorHandler } from '@spacelabstech/firestoreorm/core/ErrorHandler';
 import express from 'express';
 
 const app = express();
@@ -624,7 +624,7 @@ This automatically maps errors to HTTP status codes:
 
 ```typescript
 // repositories/user.repository.ts
-import { FirestoreRepository } from '@spacelabs/firestoreorm';
+import { FirestoreRepository } from '@spacelabstech/firestoreorm';
 import { db } from '../config/firebase';
 import { userSchema, User } from '../schemas/user.schema';
 
@@ -639,7 +639,7 @@ export const userRepo = FirestoreRepository.withSchema<User>(
 // routes/user.routes.ts
 import express from 'express';
 import { userRepo } from '../repositories/user.repository';
-import { ValidationError, NotFoundError } from '@spacelabs/firestoreorm';
+import { ValidationError, NotFoundError } from '@spacelabstech/firestoreorm';
 
 const router = express.Router();
 
@@ -717,7 +717,7 @@ export default router;
 ```typescript
 // app.ts
 import express from 'express';
-import { errorHandler } from '@spacelabs/firestoreorm/core/ErrorHandler';
+import { errorHandler } from '@spacelabstech/firestoreorm/core/ErrorHandler';
 import userRoutes from './routes/user.routes';
 
 const app = express();
@@ -792,7 +792,7 @@ export class DatabaseModule {}
 // modules/user/user.repository.ts
 import { Injectable, Inject } from '@nestjs/common';
 import { Firestore } from 'firebase-admin/firestore';
-import { FirestoreRepository } from '@spacelabs/firestoreorm';
+import { FirestoreRepository } from '@spacelabstech/firestoreorm';
 import { User, userSchema } from '../../schemas/user.schema';
 
 @Injectable()
@@ -852,7 +852,7 @@ export class UserRepository {
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { CreateUserDto, UpdateUserDto } from '../../schemas/user.schema';
-import { NotFoundError } from '@spacelabs/firestoreorm';
+import { NotFoundError } from '@spacelabstech/firestoreorm';
 
 @Injectable()
 export class UserService {
@@ -990,7 +990,7 @@ import {
   ValidationError, 
   NotFoundError, 
   ConflictError 
-} from '@spacelabs/firestoreorm';
+} from '@spacelabstech/firestoreorm';
 
 @Catch(ValidationError, NotFoundError, ConflictError)
 export class FirestoreExceptionFilter implements ExceptionFilter {
@@ -1066,7 +1066,7 @@ export const userRepo = FirestoreRepository.withSchema<User>(
 ```typescript
 // repositories/index.ts
 import { db } from '../config/firebase';
-import { FirestoreRepository } from '@spacelabs/firestoreorm';
+import { FirestoreRepository } from '@spacelabstech/firestoreorm';
 import * as schemas from '../schemas';
 
 export const userRepo = FirestoreRepository.withSchema<schemas.User>(
@@ -1460,7 +1460,7 @@ export type Order = z.infer<typeof orderSchema>;
 
 ```typescript
 // repositories/order.repository.ts
-import { FirestoreRepository } from '@spacelabs/firestoreorm';
+import { FirestoreRepository } from '@spacelabstech/firestoreorm';
 import { db } from '../config/firebase';
 import { orderSchema, Order } from '../schemas/order.schema';
 import { inventoryService } from '../services/inventory.service';
@@ -1523,7 +1523,7 @@ orderRepo.on('afterUpdate', async (order) => {
 // services/order.service.ts
 import { orderRepo } from '../repositories/order.repository';
 import { userRepo } from '../repositories/user.repository';
-import { ConflictError } from '@spacelabs/firestoreorm';
+import { ConflictError } from '@spacelabstech/firestoreorm';
 
 export class OrderService {
   async createOrder(userId: string, items: OrderItem[]) {
