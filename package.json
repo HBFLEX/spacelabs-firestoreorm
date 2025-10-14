@@ -13,12 +13,12 @@
     }
   },
   "files": [
-    "dist",
+    "dist/**/*",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && tsc --project tsconfig.json",
+    "build": "rm -rf dist && tsc",
     "prepublishOnly": "npm run build",
     "test": "ts-node-dev --respawn --transpile-only ./src/benchmarks/performance.test.ts"
   },

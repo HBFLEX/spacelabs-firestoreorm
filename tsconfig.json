@@ -3,23 +3,18 @@
     "target": "ES2020",
     "module": "commonjs",
     "lib": ["ES2020"],
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "removeComments": true,
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "outDir": "./dist",
-    "rootDir": "./",
-    "declaration": true
+    "moduleResolution": "node",
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test.ts"],
-  "exclude": ["node_modules", "dist"],
-  "ts-node": {
-    "compilerOptions": {
-      "module": "commonjs"
-    },
-    "transpileOnly": true
-  }
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }
