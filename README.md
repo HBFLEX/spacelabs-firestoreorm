@@ -742,6 +742,7 @@ NestJS users often work with DTOs for request validation. Here's how to integrat
 import { z } from 'zod';
 
 export const userSchema = z.object({
+  id: z.string().optional(), // include id in every schema you create but it can be optional
   name: z.string().min(1),
   email: z.string().email(),
   age: z.number().int().positive().optional(),
