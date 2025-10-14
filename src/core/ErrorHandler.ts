@@ -71,6 +71,7 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
         return res.status(404).json({
             error: 'Query needs to be index',
             message: err.message,
+            url: err.indexUrl,
         });
     }
 
