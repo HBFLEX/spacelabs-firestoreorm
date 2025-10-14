@@ -1,6 +1,6 @@
 {
   "name": "@spacelabstech/firestoreorm",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Type-safe Firestore ORM with validation, soft deletes, lifecycle hooks, and powerful query builder. Built for Firebase Admin SDK with full TypeScript support.",
   "type": "module",
   "main": "./dist/index.js",
