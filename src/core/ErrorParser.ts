@@ -8,7 +8,6 @@ export function parseFirestoreError(error: any): Error {
         const fields = extractFields(error.details);
         return new FirestoreIndexError(indexUrl, fields);
     }
-
     return error;
 }
 
