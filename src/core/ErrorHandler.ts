@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import {ConflictError, FirestoreIndexError, NotFoundError, ValidationError} from './Errors';
+import {ConflictError, FirestoreIndexError, NotFoundError, ValidationError} from './Errors.js';
 
 
 /**

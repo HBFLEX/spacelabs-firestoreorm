@@ -1,14 +1,14 @@
-export { FirestoreRepository, ID, HookEvent } from './core/FirestoreRepository';
-export { FirestoreQueryBuilder } from './core/QueryBuilder';
+export { FirestoreRepository, ID, HookEvent } from './core/FirestoreRepository.js';
+export { FirestoreQueryBuilder } from './core/QueryBuilder.js';
 
 export {
     NotFoundError,
     ValidationError,
     ConflictError,
     FirestoreIndexError
-} from './core/Errors';
+} from './core/Errors.js';
 
-export { parseFirestoreError } from './core/ErrorParser';
-export { errorHandler } from './core/ErrorHandler';
+export { parseFirestoreError } from './core/ErrorParser.js';
+export { errorHandler } from './core/ErrorHandler.js';
 
-export { makeValidator, Validator } from './core/Validation';
+export { makeValidator, Validator } from './core/Validation.js';

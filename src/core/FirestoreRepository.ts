@@ -1,9 +1,9 @@
 import { Firestore } from 'firebase-admin/firestore';
-import { makeValidator, Validator } from './Validation';
+import { makeValidator, Validator } from './Validation.js';
 import { z } from 'zod';
-import { NotFoundError, ValidationError } from './Errors';
-import { FirestoreQueryBuilder } from './QueryBuilder';
-import { parseFirestoreError } from './ErrorParser';
+import { NotFoundError, ValidationError } from './Errors.js';
+import { FirestoreQueryBuilder } from './QueryBuilder.js';
+import { parseFirestoreError } from './ErrorParser.js';
 
 
 export type ID = string;

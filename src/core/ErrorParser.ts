@@ -1,4 +1,4 @@
-import { FirestoreIndexError } from "./Errors";
+import { FirestoreIndexError } from "./Errors.js";
 
 
 export function parseFirestoreError(error: any): Error {

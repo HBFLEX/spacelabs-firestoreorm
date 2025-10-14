@@ -1,5 +1,5 @@
-import { parseFirestoreError } from './ErrorParser';
-import { HookEvent, ID } from './FirestoreRepository';
+import { parseFirestoreError } from './ErrorParser.js';
+import { HookEvent, ID } from './FirestoreRepository.js';
 import { CollectionReference, Firestore, Query, QuerySnapshot, Timestamp } from 'firebase-admin/firestore';
 
 
