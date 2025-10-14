@@ -598,7 +598,7 @@ try {
 The ORM includes a pre-built Express middleware for consistent error responses:
 
 ```typescript
-import { errorHandler } from '@spacelabstech/firestoreorm/core/ErrorHandler';
+import { errorHandler } from '@spacelabstech/firestoreorm';
 import express from 'express';
 
 const app = express();
@@ -717,7 +717,7 @@ export default router;
 ```typescript
 // app.ts
 import express from 'express';
-import { errorHandler } from '@spacelabstech/firestoreorm/core/ErrorHandler';
+import { errorHandler } from '@spacelabstech/firestoreorm';
 import userRoutes from './routes/user.routes';
 
 const app = express();
