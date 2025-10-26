@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { NotFoundError, ValidationError } from './Errors.js';
 import { FirestoreQueryBuilder } from './QueryBuilder.js';
 import { parseFirestoreError } from './ErrorParser.js';
+import {
+    expandDotNotation,
+    hasDotNotationKeys,
+    mergeDotNotationUpdate,
+    validateDotNotationPath
+} from "../utils/dotNotation.js";
 
 
 export type ID = string;
@@ -405,27 +411,34 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     /**
      * Update an existing document with partial data.
-     * Only provided fields are updated; other fields remain unchanged.
+     * Supports both regular fields and dot notation for nested updates.
      *
      * @param id - Document ID to update
-     * @param data - Partial document data to merge
+     * @param data - Partial document data (supports dot notation like 'address.city')
      * @returns Updated document
      * @throws {NotFoundError} If document doesn't exist
      * @throws {ValidationError} If validation fails
      *
      * @example
-     * // Update specific fields
+     * // Regular update
      * await userRepo.update('user-123', {
-     *   email: 'newemail@example.com',
-     *   updatedAt: new Date()
+     *   email: 'newemail@example.com'
      * });
      *
      * @example
-     * // Conditional update
-     * const user = await userRepo.getById('user-123');
-     * if (user && user.status === 'pending') {
-     *   await userRepo.update(user.id, { status: 'active' });
-     * }
+     * // Dot notation for nested fields
+     * await userRepo.update('user-123', {
+     *   'address.city': 'Los Angeles',
+     *   'address.zipCode': '90001',
+     *   name: 'John Doe'
+     * });
+     *
+     * @example
+     * // Deep nesting
+     * await repo.update('doc-123', {
+     *   'settings.notifications.email': true,
+     *   'settings.theme': 'dark'
+     * });
      */
     async update(id: ID, data: Partial<T>): Promise<T & {id: ID}> {
         try{
@@ -433,13 +446,24 @@ export class FirestoreRepository<T extends { id?: ID }> {
             const snapshot = await docRef.get();
 
             if(!snapshot.exists) throw new NotFoundError(`Document with id ${id} not found`);
-            const validData = this.validator ? this.validator.parseUpdate(data) : data;
 
+            if(hasDotNotationKeys(data as Record<string, any>)){
+                Object.keys(data).forEach(key => {
+                    if(key.includes('.')) validateDotNotationPath(key);
+                });
+            }
+
+            const validData = this.validator ? this.validator.parseUpdate(data) : data;
             const toUpdate = { ...validData, id };
 
             await this.runHooks('beforeUpdate', toUpdate);
 
-            const updated = { ...snapshot.data(), ...toUpdate};
+            const existingData = snapshot.data() as Record<string, any>;
+
+            const updated = hasDotNotationKeys(validData as Record<string, any>)
+                ? mergeDotNotationUpdate(existingData, validData as Record<string, any>)
+                : { ...existingData, ...validData };
+
             await docRef.set(updated, { merge: true });
 
             await this.runHooks('afterUpdate', updated);
@@ -455,7 +479,7 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     /**
      * Update multiple documents in a single batched operation.
-     * More efficient than calling update() in a loop.
+     * Supports dot notation for nested field updates.
      *
      * @param updates - Array of update operations with ID and data
      * @returns Array of updated documents
@@ -463,27 +487,29 @@ export class FirestoreRepository<T extends { id?: ID }> {
      * @throws {ValidationError} If any validation fails
      *
      * @example
-     * // Batch update user statuses
+     * // Regular bulk update
      * await userRepo.bulkUpdate([
      *   { id: 'user-1', data: { status: 'active' } },
-     *   { id: 'user-2', data: { status: 'active' } },
-     *   { id: 'user-3', data: { status: 'inactive' } }
+     *   { id: 'user-2', data: { status: 'active' } }
      * ]);
      *
      * @example
-     * // Update prices for multiple products
-     * const priceUpdates = products.map(p => ({
-     *   id: p.id,
-     *   data: { price: p.price * 1.1 } // 10% increase
-     * }));
-     * await productRepo.bulkUpdate(priceUpdates);
-     *
-     * @example
-     * // update order status for multiple orders (efficient & recommended way for simple bulk updates)
-     * await orderRepo.query().where('status', '==', 'pending').update({ status: 'shipped' })
+     * // With dot notation
+     * await userRepo.bulkUpdate([
+     *   { id: 'user-1', data: { 'profile.verified': true } },
+     *   { id: 'user-2', data: { 'settings.theme': 'dark' } }
+     * ]);
      */
     async bulkUpdate(updates: { id: ID, data: Partial<T> }[]): Promise<(T & { id: ID })[]> {
         try{
+            // Validate all dot notation paths upfront
+            for (const { data } of updates) {
+                if(hasDotNotationKeys(data as Record<string, any>)){
+                    Object.keys(data).forEach(key => {
+                        if(key.includes('.')) validateDotNotationPath(key);
+                    });
+                }
+            }
             await this.runHooks('beforeBulkUpdate', updates);
 
             const snapshots = await Promise.all(
@@ -499,8 +525,13 @@ export class FirestoreRepository<T extends { id?: ID }> {
                 const docRef = this.col().doc(id);
 
                 if(!snapshot.exists) throw new NotFoundError(`Document with ID ${id} not found`);
+
                 const validData = this.validator ? this.validator.parseUpdate(data) : data;
-                const merged = { ...snapshot.data(), ...validData, id };
+                const existingData = snapshot.data() as Record<string, any>;
+
+                const merged = hasDotNotationKeys(validData as Record<string, any>)
+                    ? mergeDotNotationUpdate(existingData, validData as Record<string, any>)
+                    : { ...existingData, ...validData };
 
                 actions.push(batch => batch.set(docRef, merged, { merge: true }));
                 updatedDocs.push(merged as (T & { id: ID }));
@@ -1104,32 +1135,62 @@ export class FirestoreRepository<T extends { id?: ID }> {
 
     /**
      * Update a document within a transaction.
-     * Must be used inside runInTransaction callback.
+     * Supports dot notation for nested field updates.
+     * IMPORTANT: Call getForUpdate() first to read the document before updating.
      *
      * @param tx - Firestore transaction object
      * @param id - Document ID
-     * @param data - Partial data to update
+     * @param data - Partial data to update (supports dot notation)
+     * @param existingData - Optional: pass existing data from getForUpdate to avoid extra read
      * @throws {ValidationError} If validation fails
      *
      * @example
      * await repo.runInTransaction(async (tx, repo) => {
+     *   const product = await repo.getForUpdate(tx, 'product-123');
      *   await repo.updateInTransaction(tx, 'product-123', {
      *     stock: product.stock - quantity
-     *   });
+     *   }, product);
+     * });
+     *
+     * @example
+     * // With dot notation in transaction
+     * await repo.runInTransaction(async (tx, repo) => {
+     *   const user = await repo.getForUpdate(tx, 'user-123');
+     *   await repo.updateInTransaction(tx, 'user-123', {
+     *     'settings.notifications': true,
+     *     'profile.lastLogin': new Date()
+     *   }, user);
      * });
      */
     async updateInTransaction(
         tx: FirebaseFirestore.Transaction,
         id: ID,
-        data: Partial<T>
+        data: Partial<T>,
+        existingData?: T & { id: ID }
     ): Promise<void> {
         try{
             const docRef = this.col().doc(id);
-            const validData = this.validator ? this.validator.parseUpdate(data) : data;
 
+            if(hasDotNotationKeys(data as Record<string, any>)){
+                Object.keys(data).forEach(key => {
+                    if(key.includes('.')) validateDotNotationPath(key);
+                });
+            }
+
+            const validData = this.validator ? this.validator.parseUpdate(data) : data;
             const toUpdate = { ...validData, id };
+
             await this.runHooks('beforeUpdate', toUpdate);
-            tx.set(docRef, validData, { merge: true });
+
+            if(hasDotNotationKeys(validData as Record<string, any>)){
+                if (!existingData) {
+                    throw new Error('existingData is required when using dot notation in transactions. Call getForUpdate() first.');
+                }
+                const merged = mergeDotNotationUpdate(existingData as Record<string, any>, validData as Record<string, any>);
+                tx.set(docRef, merged, { merge: true });
+            } else {
+                tx.set(docRef, validData, { merge: true });
+            }
         }catch(error: any){
             if(error instanceof z.ZodError){
                 throw new ValidationError(error.issues);

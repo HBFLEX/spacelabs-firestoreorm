@@ -2,7 +2,7 @@
 
 > A type-safe, feature-rich Firestore ORM built for the Firebase Admin SDK. Designed to make backend Firestore development actually enjoyable.
 
-[![npm version](https://img.shields.io/npm/v/@spacelabs/firestoreorm.svg)](https://www.npmjs.com/package/@spacelabs/firestoreorm)
+[![npm version](https://img.shields.io/npm/v/@spacelabstech/firestoreorm.svg)](https://www.npmjs.com/package/@spacelabstech/firestoreorm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 
@@ -14,6 +14,7 @@
 - [Quick Start](#quick-start)
 - [Core Concepts](#core-concepts)
 - [Complete Feature Guide](#complete-feature-guide)
+- [Dot Notation for Nested Updates](#dot-notation-for-nested-updates)
 - [Framework Integration](#framework-integration)
 - [Best Practices](#best-practices)
 - [Understanding Performance Costs](#understanding-performance-costs)
@@ -49,6 +50,7 @@ So I built this. FirestoreORM is the tool I wish I had from day one. It's design
 - **Powerful Query Builder** - Intuitive, chainable queries with pagination, aggregation, and streaming
 - **Transaction Support** - ACID guarantees for critical operations
 - **Subcollection Support** - Navigate document hierarchies naturally
+- **Dot Notation Updates** - Update nested fields without replacing entire objects
 - **Zero Vendor Lock-In** - Built on Firebase Admin SDK; works with any Node.js framework
 
 ### Framework Agnostic
@@ -563,6 +565,246 @@ const comments = postRepo
 
 // Get parent ID
 const parentId = userOrders.getParentId(); // 'user-123'
+```
+
+## Dot Notation for Nested Updates
+
+FirestoreORM supports Firestore's dot notation syntax for updating nested fields without replacing entire objects. This allows you to update specific nested properties while preserving other fields.
+
+### Basic Nested Update
+
+```typescript
+// Without dot notation - replaces entire address object
+await userRepo.update('user-123', {
+  address: {
+    city: 'Los Angeles'
+  }
+});
+// Result: { address: { city: 'Los Angeles' } }
+// street, zipCode, and other fields are lost
+
+// With dot notation - updates only city, preserves other fields
+await userRepo.update('user-123', {
+  'address.city': 'Los Angeles'
+} as any);
+// Result: { address: { city: 'Los Angeles', street: '123 Main', zipCode: '90001' } }
+// street and zipCode are preserved
+```
+
+### Deep Nested Updates
+
+```typescript
+// Update deeply nested settings
+await userRepo.update('user-123', {
+  'profile.settings.notifications.email': true,
+  'profile.settings.theme': 'dark'
+} as any);
+
+// Creates nested structure if it doesn't exist
+await userRepo.update('user-123', {
+  'metadata.preferences.language': 'en',
+  'metadata.preferences.timezone': 'UTC'
+} as any);
+```
+
+### Mixed Updates
+
+```typescript
+// Combine regular fields with dot notation
+await userRepo.update('user-123', {
+  name: 'John Doe',                    // Regular field
+  'address.city': 'New York',          // Nested field
+  'address.zipCode': '10001',          // Another nested field
+  'profile.verified': true             // Different nested object
+} as any);
+```
+
+### Bulk Updates with Dot Notation
+
+```typescript
+// Bulk update nested fields
+await userRepo.bulkUpdate([
+  { 
+    id: 'user-1', 
+    data: { 
+      'profile.verified': true,
+      'settings.notifications': false 
+    } as any 
+  },
+  { 
+    id: 'user-2', 
+    data: { 
+      'profile.verified': true 
+    } as any 
+  }
+]);
+```
+
+### Query Updates with Dot Notation
+
+```typescript
+// Update nested fields for all matching documents
+await userRepo.query()
+  .where('role', '==', 'admin')
+  .update({
+    'permissions.canDelete': true,
+    'permissions.canEdit': true
+  } as any);
+
+// Update deeply nested analytics
+await postRepo.query()
+  .where('published', '==', true)
+  .update({
+    'analytics.impressions': 0,
+    'analytics.lastUpdated': new Date().toISOString()
+  } as any);
+```
+
+### Transactions with Dot Notation
+
+```typescript
+await userRepo.runInTransaction(async (tx, repo) => {
+  // Read the document first (required for transactions)
+  const user = await repo.getForUpdate(tx, 'user-123');
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  // Update nested fields - pass existing data as third parameter
+  await repo.updateInTransaction(tx, 'user-123', {
+    'settings.theme': 'dark',
+    'profile.lastLogin': new Date().toISOString()
+  } as any, user);
+});
+```
+
+### Important Notes
+
+**1. Type Casting Required**
+
+TypeScript requires `as any` for dot notation keys since they're dynamic strings:
+
+```typescript
+// Required type assertion
+await userRepo.update('user-123', {
+  'address.city': 'NYC'
+} as any);
+```
+
+**2. Path Validation**
+
+Dot notation paths are validated to prevent errors:
+
+```typescript
+// Invalid paths (will throw error)
+'address..city'     // Empty parts (consecutive dots)
+'.address.city'     // Starts with dot
+'address.city.'     // Ends with dot
+''                  // Empty string
+```
+
+**3. Firestore Limitations**
+
+- **Undefined values** are automatically filtered out (Firestore doesn't accept `undefined`)
+- Use `null` if you need to explicitly clear a field value
+
+```typescript
+// Undefined is filtered out, original value preserved
+await userRepo.update('user-123', {
+  'address.city': undefined
+} as any);
+
+// Use null to clear a field
+await userRepo.update('user-123', {
+  'address.city': null
+} as any);
+```
+
+**4. Transaction Requirements**
+
+When using dot notation in transactions, you must:
+
+- Call `getForUpdate()` first to read the document
+- Pass the existing data as the third parameter to `updateInTransaction()`
+- This ensures proper read-before-write transaction semantics
+
+```typescript
+// Correct - read first, pass existing data
+await repo.runInTransaction(async (tx, repo) => {
+  const doc = await repo.getForUpdate(tx, 'doc-123');
+  await repo.updateInTransaction(tx, 'doc-123', {
+    'nested.field': 'value'
+  } as any, doc);
+});
+
+// Wrong - will throw error
+await repo.runInTransaction(async (tx, repo) => {
+  await repo.updateInTransaction(tx, 'doc-123', {
+    'nested.field': 'value'
+  } as any); // Missing existing data parameter
+});
+```
+
+### Use Cases
+
+**User Preferences**
+
+Update specific settings without replacing all preferences:
+
+```typescript
+await userRepo.update('user-123', {
+  'preferences.emailNotifications': true,
+  'preferences.theme': 'dark'
+} as any);
+```
+
+**Nested Configurations**
+
+Modify individual config values in complex objects:
+
+```typescript
+await configRepo.update('app-config', {
+  'features.darkMode.enabled': true,
+  'features.darkMode.autoSwitch': true,
+  'features.analytics.trackingId': 'GA-123456'
+} as any);
+```
+
+**Analytics Counters**
+
+Update nested counter fields:
+
+```typescript
+await postRepo.update('post-123', {
+  'analytics.views': 150,
+  'analytics.likes': 42,
+  'analytics.shares': 8
+} as any);
+```
+
+**Status Updates**
+
+Update status in nested workflow objects:
+
+```typescript
+await orderRepo.update('order-123', {
+  'workflow.payment.status': 'completed',
+  'workflow.payment.completedAt': new Date().toISOString(),
+  'workflow.fulfillment.status': 'pending'
+} as any);
+```
+
+**Partial Address Updates**
+
+Update only changed address fields:
+
+```typescript
+await userRepo.update('user-123', {
+  'shippingAddress.street': '456 New Street',
+  'shippingAddress.apt': '10B'
+  // city, state, zipCode remain unchanged
+} as any);
 ```
 
 ### Error Handling
@@ -1832,135 +2074,210 @@ Create a repository with Zod schema validation.
 #### Instance Methods
 
 **`create(data: T): Promise<T & { id: ID }>`**
+
 Create a new document.
 
 **`bulkCreate(dataArray: T[]): Promise<(T & { id: ID })[]>`**
+
 Create multiple documents in batch.
 
 **`getById(id: ID, includeDeleted?: boolean): Promise<(T & { id: ID }) | null>`**
+
 Get document by ID.
 
 **`update(id: ID, data: Partial<T>): Promise<T & { id: ID }>`**
-Update document with partial data.
+
+Update document with partial data. Supports dot notation for nested updates.
 
 **`bulkUpdate(updates: { id: ID, data: Partial<T> }[]): Promise<(T & { id: ID })[]>`**
-Update multiple documents in batch.
+
+Update multiple documents in batch. Supports dot notation.
 
 **`upsert(id: ID, data: T): Promise<T & { id: ID }>`**
+
 Create or update document with specific ID.
 
 **`delete(id: ID): Promise<void>`**
+
 Permanently delete document.
 
 **`bulkDelete(ids: ID[]): Promise<number>`**
+
 Permanently delete multiple documents.
 
 **`softDelete(id: ID): Promise<void>`**
+
 Soft delete document (sets `deletedAt` timestamp).
 
 **`bulkSoftDelete(ids: ID[]): Promise<number>`**
+
 Soft delete multiple documents.
 
 **`restore(id: ID): Promise<void>`**
+
 Restore soft-deleted document.
 
+**`bulkRestore(ids: ID[]): Promise<number>`**
+
+Restore multiple soft-deleted documents.
+
 **`restoreAll(): Promise<number>`**
-Restore all soft-deleted documents.
+
+Restore all soft-deleted documents in collection.
 
 **`purgeDelete(): Promise<number>`**
+
 Permanently delete all soft-deleted documents.
 
 **`findByField<K extends keyof T>(field: K, value: T[K]): Promise<(T & { id: ID })[]>`**
+
 Find documents by field value.
 
 **`list(limit?: number, startAfterId?: string, includeDeleted?: boolean): Promise<(T & { id: ID })[]>`**
+
 List documents with pagination.
 
 **`query(): FirestoreQueryBuilder<T>`**
+
 Create query builder for complex queries.
 
 **`on(event: HookEvent, fn: HookFn): void`**
+
 Register lifecycle hook.
 
 **`subcollection<S>(parentId: ID, subcollectionName: string, schema?: ZodSchema): FirestoreRepository<S>`**
+
 Access subcollection.
 
+**`getParentId(): ID | null`**
+
+Get parent document ID (for subcollections).
+
+**`getCollectionPath(): string`**
+
+Get full collection path.
+
 **`runInTransaction<R>(fn: (tx: Transaction, repo: Repository) => Promise<R>): Promise<R>`**
+
 Execute function within transaction.
 
 **`getForUpdate(tx: Transaction, id: ID, includeDeleted?: boolean): Promise<(T & { id: ID }) | null>`**
+
 Get document for update within transaction.
 
-**`updateInTransaction(tx: Transaction, id: ID, data: Partial<T>): Promise<void>`**
-Update document within transaction.
+**`updateInTransaction(tx: Transaction, id: ID, data: Partial<T>, existingData?: T & { id: ID }): Promise<void>`**
+
+Update document within transaction. Requires `existingData` parameter when using dot notation.
 
 **`createInTransaction(tx: Transaction, data: T): Promise<T & { id: ID }>`**
+
 Create document within transaction.
 
 **`deleteInTransaction(tx: Transaction, id: ID): Promise<void>`**
+
 Delete document within transaction.
+
+**`softDeleteInTransaction(tx: Transaction, id: ID): Promise<void>`**
+
+Soft delete document within transaction.
 
 ### FirestoreQueryBuilder
 
 **`where(field: string, op: Operator, value: any): this`**
-Add where clause.
+
+Add where clause. Operators: `==`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not-in`, `array-contains`, `array-contains-any`.
 
 **`select(...fields: string[]): this`**
-Select specific fields.
+
+Select specific fields to return.
 
 **`orderBy(field: string, direction?: 'asc' | 'desc'): this`**
-Order results.
+
+Order results by field.
 
 **`limit(n: number): this`**
+
 Limit number of results.
 
+**`startAfter(cursorId: ID): this`**
+
+Start after document (for pagination).
+
+**`startAt(cursorId: ID): this`**
+
+Start at document (inclusive).
+
+**`endBefore(cursorId: ID): this`**
+
+End before document.
+
+**`endAt(cursorId: ID): this`**
+
+End at document (inclusive).
+
 **`includeDeleted(): this`**
-Include soft-deleted documents.
+
+Include soft-deleted documents in results.
 
 **`onlyDeleted(): this`**
+
 Query only soft-deleted documents.
 
 **`get(): Promise<(T & { id: ID })[]>`**
-Execute query and return results.
+
+Execute query and return all results.
 
 **`getOne(): Promise<(T & { id: ID }) | null>`**
-Get single result.
+
+Get single result (first document).
 
 **`count(): Promise<number>`**
-Count matching documents.
+
+Count matching documents (aggregation query).
 
 **`exists(): Promise<boolean>`**
-Check if any documents match.
 
-**`paginate(limit: number, cursorId?: ID): Promise<{ items: T[], nextCursorId?: ID }>`**
-Cursor-based pagination.
+Check if any documents match query.
 
-**`offsetPaginate(page: number, pageSize: number): Promise<PaginationResult>`**
-Offset-based pagination.
+**`paginate(limit: number, cursorId?: ID): Promise<{ items: T[], nextCursorId?: ID, prevCursorId?: ID }>`**
+
+Cursor-based pagination (recommended for large datasets).
+
+**`offsetPaginate(page: number, pageSize: number): Promise<PaginationResult<T>>`**
+
+Offset-based pagination. Returns `{ items, total, page, pageSize, totalPages }`.
 
 **`paginateWithCount(limit: number, cursorId?: ID): Promise<{ items: T[], nextCursorId?: ID, total: number }>`**
-Paginate with total count.
+
+Cursor pagination with total count.
 
 **`update(data: Partial<T>): Promise<number>`**
-Update all matching documents.
+
+Update all matching documents. Returns count of updated documents. Supports dot notation.
 
 **`delete(): Promise<number>`**
-Delete all matching documents.
+
+Delete all matching documents. Returns count of deleted documents.
 
 **`softDelete(): Promise<number>`**
-Soft delete all matching documents.
+
+Soft delete all matching documents. Returns count of soft-deleted documents.
 
 **`aggregate(field: string, operation: 'sum' | 'avg'): Promise<number>`**
-Perform aggregation.
+
+Perform aggregation on field.
 
 **`distinctValues<K extends keyof T>(field: K): Promise<T[K][]>`**
+
 Get distinct values for field.
 
 **`stream(): AsyncGenerator<T & { id: ID }>`**
-Stream results.
+
+Stream results (for large datasets).
 
 **`onSnapshot(callback: (items: T[]) => void, onError?: (error: Error) => void): Promise<() => void>`**
-Subscribe to real-time updates.
+
+Subscribe to real-time updates. Returns unsubscribe function.
 
 ### Error Classes
 
@@ -1995,7 +2312,7 @@ Properties:
 - `fields: string[]` - Fields requiring indexing
 - `toString(): string` - Returns formatted error message with instructions
 
-### Error Handler Middleware
+### Express Middleware
 
 **`errorHandler(err: any, req: Request, res: Response, next: NextFunction): void`**
 
@@ -2005,12 +2322,12 @@ Maps errors to HTTP status codes:
 - `ValidationError` → 400 Bad Request
 - `NotFoundError` → 404 Not Found
 - `ConflictError` → 409 Conflict
-- `FirestoreIndexError` → 400 Bad Request
+- `FirestoreIndexError` → 400 Bad Request (with index URL)
 - Others → 500 Internal Server Error
 
 ## Advanced Patterns
 
-### Pattern 1: Audit Logging
+### Audit Logging
 
 Track all data changes for compliance and debugging.
 
@@ -2018,7 +2335,7 @@ Track all data changes for compliance and debugging.
 // services/audit-log.service.ts
 class AuditLogService {
   private auditRepo = new FirestoreRepository<AuditLog>(db, 'audit_logs');
-  
+
   async record(action: string, data: any, userId?: string) {
     await this.auditRepo.create({
       action,
@@ -2047,7 +2364,7 @@ userRepo.on('afterDelete', async (user) => {
 });
 ```
 
-### Pattern 2: Caching Layer
+### Caching Layer
 
 Add Redis caching to reduce Firestore reads.
 
@@ -2059,37 +2376,34 @@ class CachedUserRepository {
   private repo = FirestoreRepository.withSchema<User>(db, 'users', userSchema);
   private cache = new Redis(process.env.REDIS_URL);
   private cacheTTL = 300; // 5 minutes
-  
+
   async getById(id: string): Promise<User | null> {
     // Check cache first
     const cached = await this.cache.get(`user:${id}`);
     if (cached) {
       return JSON.parse(cached);
     }
-    
+
     // Fallback to Firestore
     const user = await this.repo.getById(id);
-    
     if (user) {
       await this.cache.setex(`user:${id}`, this.cacheTTL, JSON.stringify(user));
     }
-    
+
     return user;
   }
-  
+
   async update(id: string, data: Partial<User>): Promise<User> {
     const user = await this.repo.update(id, data);
-    
     // Invalidate cache
     await this.cache.del(`user:${id}`);
-    
     return user;
   }
-  
+
   async create(data: User): Promise<User & { id: string }> {
     return this.repo.create(data);
   }
-  
+
   // Delegate other methods to repo...
   query() {
     return this.repo.query();
@@ -2099,7 +2413,7 @@ class CachedUserRepository {
 export const cachedUserRepo = new CachedUserRepository();
 ```
 
-### Pattern 3: Search Integration
+### Full-Text Search
 
 Integrate with Algolia or Elasticsearch for full-text search.
 
@@ -2112,10 +2426,9 @@ class SearchService {
     process.env.ALGOLIA_APP_ID!,
     process.env.ALGOLIA_ADMIN_KEY!
   );
-  
   private usersIndex = this.client.initIndex('users');
   private productsIndex = this.client.initIndex('products');
-  
+
   async indexUser(user: User & { id: string }) {
     await this.usersIndex.saveObject({
       objectID: user.id,
@@ -2124,11 +2437,11 @@ class SearchService {
       status: user.status
     });
   }
-  
+
   async deleteUser(userId: string) {
     await this.usersIndex.deleteObject(userId);
   }
-  
+
   async searchUsers(query: string) {
     const { hits } = await this.usersIndex.search(query);
     return hits;
@@ -2151,7 +2464,7 @@ userRepo.on('afterDelete', async (user) => {
 });
 ```
 
-### Pattern 4: Event-Driven Architecture
+### Event-Driven Architecture
 
 Publish domain events to message queue.
 
@@ -2162,7 +2475,6 @@ import { EventEmitter } from 'events';
 class EventPublisher extends EventEmitter {
   async publish(event: string, data: any) {
     this.emit(event, data);
-    
     // Also publish to external queue (RabbitMQ, SQS, etc.)
     await messageQueue.publish(event, data);
   }
@@ -2191,7 +2503,7 @@ eventPublisher.on('order.placed', async (order) => {
 });
 ```
 
-### Pattern 5: Multi-Database Strategy
+### Multi-Database Pattern
 
 Use different databases for different data types.
 
@@ -2229,7 +2541,7 @@ userRepo.on('afterCreate', async (user) => {
 });
 ```
 
-### Pattern 6: Soft Delete with Archive
+### Data Archiving
 
 Archive soft-deleted documents to a separate collection.
 
@@ -2239,18 +2551,17 @@ class ArchivingService {
     db,
     'archived_documents'
   );
-  
+
   async archiveAndDelete<T>(
     repo: FirestoreRepository<T>,
     id: string
   ): Promise<void> {
     // Get document
     const doc = await repo.getById(id, true);
-    
     if (!doc) {
       throw new NotFoundError('Document not found');
     }
-    
+
     // Archive to separate collection
     await this.archiveRepo.create({
       originalCollection: repo.getCollectionPath(),
@@ -2258,7 +2569,7 @@ class ArchivingService {
       data: doc,
       archivedAt: new Date().toISOString()
     });
-    
+
     // Permanently delete from original collection
     await repo.delete(id);
   }
@@ -2270,7 +2581,7 @@ export const archivingService = new ArchivingService();
 await archivingService.archiveAndDelete(userRepo, 'user-123');
 ```
 
-### Pattern 7: Rate Limiting with Repository
+### Rate Limiting
 
 Implement rate limiting at the repository level.
 
@@ -2283,19 +2594,19 @@ class RateLimitedRepository<T> {
     points: 100, // 100 requests
     duration: 60, // per 60 seconds
   });
-  
+
   constructor(private repo: FirestoreRepository<T>) {}
-  
+
   async create(data: T, userId: string): Promise<T & { id: string }> {
     await this.rateLimiter.consume(userId);
     return this.repo.create(data);
   }
-  
+
   async update(id: string, data: Partial<T>, userId: string): Promise<T & { id: string }> {
     await this.rateLimiter.consume(userId);
     return this.repo.update(id, data);
   }
-  
+
   // Delegate other methods...
 }
 
@@ -2304,9 +2615,10 @@ export const rateLimitedUserRepo = new RateLimitedRepository(userRepo);
 
 ## Migration Guide
 
-### From Raw Firestore
+### From Raw Firestore SDK
 
 **Before:**
+
 ```typescript
 const usersRef = db.collection('users');
 
@@ -2334,6 +2646,7 @@ const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 ```
 
 **After:**
+
 ```typescript
 const userRepo = FirestoreRepository.withSchema<User>(
   db,
@@ -2362,7 +2675,7 @@ const users = await userRepo.query()
   .get();
 ```
 
-### From Typeorm/Prisma
+### From Other ORMs
 
 If you're coming from SQL ORMs, here's how concepts map:
 
@@ -2385,19 +2698,13 @@ If you're coming from SQL ORMs, here's how concepts map:
 
 ## Troubleshooting
 
-### Common Issues
+### 1. Composite Index Required
 
-**1. Composite Index Required**
-
-```
-Error: Query requires a Firestore index
-```
+**Error:** `Query requires a Firestore index`
 
 **Solution:** Click the URL in the error message to create the index. Wait 1-2 minutes for it to build.
 
----
-
-**2. Hooks Not Running in Transactions**
+### 2. Hooks Not Running in Transactions
 
 ```typescript
 // After hooks don't run
@@ -2419,9 +2726,7 @@ const result = await repo.runInTransaction(async (tx, repo) => {
 await sendEmail(result.email);
 ```
 
----
-
-**3. "in" Query Limit (10 items)**
+### 3. "in" Query Limit (10 items)
 
 ```typescript
 // Firestore limits "in" queries to 10 items
@@ -2444,9 +2749,7 @@ for (const chunk of chunks) {
 }
 ```
 
----
-
-**4. Query Ordering Requires Index**
+### 4. Query Ordering Requires Index
 
 ```typescript
 // This requires composite index
@@ -2458,9 +2761,7 @@ await repo.query()
 
 **Solution:** Create the composite index via the error message link, or order by the same field you filter on.
 
----
-
-**5. Subcollection Parent ID Lost**
+### 5. Subcollection Parent ID Lost
 
 When querying subcollections, the parent ID isn't automatically included in results.
 
@@ -2471,7 +2772,20 @@ const ordersRepo = userRepo.subcollection('user-123', 'orders');
 const parentId = ordersRepo.getParentId(); // 'user-123'
 ```
 
----
+### 6. Dot Notation in Transactions
+
+**Error:** Missing existing data when using dot notation in transactions
+
+**Solution:** Always pass the existing document as the third parameter:
+
+```typescript
+await repo.runInTransaction(async (tx, repo) => {
+  const doc = await repo.getForUpdate(tx, 'doc-123');
+  await repo.updateInTransaction(tx, 'doc-123', {
+    'nested.field': 'value'
+  } as any, doc); // Pass existing doc
+});
+```
 
 ## Performance Benchmarks
 
@@ -2493,8 +2807,7 @@ Based on testing with Firebase Admin SDK:
 **Notes:**
 - Network latency varies by region
 - Firestore has built-in caching for frequently accessed docs
-
----
+- Use `limit()` and pagination for large collections
 
 ## Contributing
 
@@ -2508,7 +2821,7 @@ Contributions are welcome! Please follow these guidelines:
 6. Push to your branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
-**Development Setup:**
+### Development Setup
 
 ```bash
 git clone https://github.com/HBFLEX/spacelabs-firestoreorm.git
@@ -2518,13 +2831,17 @@ npm run build
 npm test
 ```
 
----
+### Coding Standards
+
+- Use TypeScript strict mode
+- Follow existing code style
+- Write tests for new features
+- Update documentation
+- Keep commits focused and atomic
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
----
+MIT License - see [LICENSE](https://github.com/HBFLEX/spacelabs-firestoreorm/blob/main/LICENSE) file for details.
 
 ## Support
 
@@ -2532,27 +2849,23 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation:** [GitHub Repository](https://github.com/HBFLEX/spacelabs-firestoreorm)
 - **Email:** hbfl3x@gmail.com
 
----
-
 ## Acknowledgments
 
-Built with frustration and determination by Happy Banda (HBFL3Xx) after years of wrestling with Firestore on the backend. This ORM is the tool I needed but couldn't find.
+Built with frustration and determination by **Happy Banda (HBFL3Xx)** after years of wrestling with Firestore on the backend. This ORM is the tool I needed but couldn't find.
 
 Special thanks to:
 - The Firebase team for the Admin SDK
 - The Zod team for incredible schema validation
+- The Firebase firestore community for requesting new features to make this ORM better
 - Everyone who's ever struggled with Firestore and thought "there has to be a better way"
 
-If this ORM saves you time and headaches, consider giving it a star on GitHub. Every star motivates continued development and improvements.
-
----
+If this ORM saves you time and headaches, consider giving it a ⭐ on GitHub. Every star motivates continued development and improvements.
 
 ## Roadmap
 
 Planned features for future releases:
-
-- looking forward for your suggestions here
+- Looking forward to your suggestions here
 
 ---
 
-**Made with code and coffee by HBFL3Xx**
+**Made with ☕ and code by HBFL3Xx**

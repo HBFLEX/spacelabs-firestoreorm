@@ -1,6 +1,7 @@
 import { parseFirestoreError } from './ErrorParser.js';
 import { HookEvent, ID } from './FirestoreRepository.js';
 import { CollectionReference, Firestore, Query, QuerySnapshot, Timestamp } from 'firebase-admin/firestore';
+import {hasDotNotationKeys, mergeDotNotationUpdate, validateDotNotationPath} from "../utils/dotNotation.js";
 
 
 type Scalar = string | number | boolean | Date | Timestamp;
@@ -171,25 +172,44 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
     }
 
     /**
-     * Update all documents matching the query
+     * Update all documents matching the query.
+     * Supports dot notation for nested field updates.
+     *
+     * @param data - Partial document data (supports dot notation)
+     * @returns Number of documents updated
      *
      * @example
-     * // Update all pending orders to shipped
+     * // Regular update
      * await ordersRepo.query()
      *   .where('status', '==', 'pending')
      *   .update({ status: 'shipped' });
      *
      * @example
-     * // Update with multiple fields
+     * // Dot notation for nested fields
+     * await usersRepo.query()
+     *   .where('role', '==', 'admin')
+     *   .update({
+     *     'settings.notifications': true,
+     *     'profile.verified': true
+     *   });
+     *
+     * @example
+     * // Mixed updates
      * await ordersRepo.query()
      *   .where('category', '==', 'electronics')
      *   .update({
      *     discount: 0.1,
-     *     updatedAt: new Date().toISOString()
+     *     'metadata.updated': new Date().toISOString()
      *   });
      */
     async update(data: Partial<T>): Promise<number> {
         try{
+            if(hasDotNotationKeys(data as Record<string, any>)){
+                Object.keys(data).forEach(key => {
+                    if(key.includes('.')) validateDotNotationPath(key);
+                });
+            }
+
             const finalQuery = this.applySoftDeleteFilter(this.query);
             const snapshot = await finalQuery.get();
 
@@ -205,10 +225,19 @@ export class FirestoreQueryBuilder<T extends { id?: string }> {
             }));
 
             await this.runHooks('beforeBulkUpdate', updates);
-
             const actions: ((batch: FirebaseFirestore.WriteBatch) => void)[] = [];
-            for(const doc of snapshot.docs)
-                actions.push(batch => batch.update(doc.ref, data as any));
+
+            if(hasDotNotationKeys(data as Record<string, any>)){
+                for(const doc of snapshot.docs){
+                    const existingData = doc.data() as Record<string, any>;
+                    const merged = mergeDotNotationUpdate(existingData, data as Record<string, any>);
+                    actions.push(batch => batch.set(doc.ref, merged, { merge: true }));
+                }
+            } else {
+                for(const doc of snapshot.docs){
+                    actions.push(batch => batch.update(doc.ref, data as any));
+                }
+            }
 
             await this.commitInChunks(actions);
             await this.runHooks('afterBulkUpdate', updates);
