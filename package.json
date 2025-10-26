@@ -17,6 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "clean": "rimraf dist .tsbuildinfo coverage",
     "build": "rm -rf dist && tsc",
     "prepublishOnly": "npm run build",
     "test": "jest",
