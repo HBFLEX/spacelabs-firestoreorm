@@ -37,6 +37,6 @@ coverage/
 
 ./src/schemas
 ./core/TransactionContext.ts
-firebase-service-account.json
+.src/firebase-service-account.json
 test.ts
 
